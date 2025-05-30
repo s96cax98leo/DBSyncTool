@@ -8,63 +8,96 @@
 
 package com.yt;
 
+import com.yt.config.DatabaseConfig;
+import com.yt.exception.DBSyncException;
+import com.yt.service.SyncService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Files;
 import java.nio.file.Paths;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Scanner;
-import java.util.concurrent.*;
 import java.util.stream.Collectors;
 
 public class Main {
-    public static void main(String[] args) throws IOException, ExecutionException, InterruptedException {
-        int fetchSize = 3000;
+    private static final Logger logger = LoggerFactory.getLogger(Main.class);
+    private static final int DEFAULT_FETCH_SIZE = 3000;
+
+    public static void main(String[] args) {
         try {
-            if (args[0] != null) {
-                fetchSize = Math.min(Integer.parseInt(args[0]), fetchSize);
-            }
-        } catch (ArrayIndexOutOfBoundsException e) {
+            // 解析命令行參數
+            int fetchSize = args.length > 0 ? 
+                Math.min(Integer.parseInt(args[0]), DEFAULT_FETCH_SIZE) : 
+                DEFAULT_FETCH_SIZE;
+
+            // 獲取用戶輸入
+            Scanner scanner = new Scanner(System.in);
+            
+            System.out.print("請輸入同步時DB Thread 數量: ");
+            int dbThreads = scanner.nextInt();
+            
+            System.out.print("請輸入同步時Table Thread 數量: ");
+            int tableThreads = scanner.nextInt();
+            
+            System.out.print("請確認是否清空目的DB的表 Y/N: ");
+            boolean truncateTarget = scanner.next().equalsIgnoreCase("Y");
+            
+            System.out.print("請輸入來源DB配置文件路徑: ");
+            File sourceDbConfig = new File(scanner.next());
+            
+            System.out.print("請輸入目的DB配置文件路徑: ");
+            File targetDbConfig = new File(scanner.next());
+            
+            System.out.print("請輸入表清單文件路徑: ");
+            String tableListPath = scanner.next();
+
+            // 初始化數據庫配置
+            DatabaseConfig sourceDb = new DatabaseConfig(sourceDbConfig);
+            DatabaseConfig targetDb = new DatabaseConfig(targetDbConfig);
+
+            // 讀取表清單
+            List<String> tables = readTableList(tableListPath);
+            logger.info("讀取到 {} 個表需要同步", tables.size());
+
+            // 創建同步服務
+            SyncService syncService = new SyncService(
+                sourceDb, targetDb, fetchSize, dbThreads, tableThreads, truncateTarget);
+
+            // 開始同步
+            long startTime = System.currentTimeMillis();
+            logger.info("開始數據同步...");
+            
+            syncService.syncTables(tables);
+            
+            long endTime = System.currentTimeMillis();
+            logger.info("數據同步完成，總耗時: {} 秒", (endTime - startTime) / 1000);
+
+            // 關閉資源
+            syncService.shutdown();
+            sourceDb.close();
+            targetDb.close();
+            scanner.close();
+
+        } catch (DBSyncException e) {
+            logger.error("同步過程中發生錯誤: {} - {}", 
+                e.getErrorCode().getDescription(), e.getMessage());
+            System.exit(1);
+        } catch (Exception e) {
+            logger.error("發生未預期的錯誤", e);
+            System.exit(1);
         }
-        long startTime = System.currentTimeMillis();
-//        ConnectionFactory
-        List<ConnectProperties> DBList = new ArrayList<>();
-        Scanner scanner = new Scanner(System.in);
-        System.out.print("請輸入同步時DB Thread 數量 :");
-        ExecutorService excute = Executors.newFixedThreadPool(scanner.nextInt());
-        System.out.print("請輸入同步時Table Thread 數量 :");
-        int threadnum = scanner.nextInt();
-        System.out.print("請確認是否清空目的DB的表  Y/N :");
-        boolean truncateFlage = scanner.next().equalsIgnoreCase("Y");
-        System.out.print("請輸入來源DB:");
-        ConnectProperties sourceDB = new ConnectProperties(new File(scanner.next()));
-        System.out.print("請輸入目的DB:");
-        ConnectProperties destDB = new ConnectProperties(new File(scanner.next()));
-        DBList.add(destDB);
-        System.out.print("請輸入 絕對路徑或相對路徑檔案名稱 例:tablelist.txt 或 T:\\test\\tablelist.txt :");
-        InputStreamReader isr = new InputStreamReader(Files.newInputStream(Paths.get(scanner.next())));
-        //檔案讀取路徑
-        BufferedReader reader = new BufferedReader(isr);
-        List<String> tableList = reader.lines().filter(e -> !e.isEmpty()).map(String::toUpperCase).collect(Collectors.toList());
-        LinkedBlockingQueue<Future<Object>> que = new LinkedBlockingQueue<>();
-        for (ConnectProperties destConn : DBList) {
-            SyncDB dbToDBThread = new SyncDB(sourceDB, destConn, tableList, truncateFlage, fetchSize, threadnum);
-            que.add(excute.submit(dbToDBThread));
-        }
-        waitingThreadFinish(que);
-        scanner.close();
-        System.exit(1);
     }
 
-    public static void waitingThreadFinish(LinkedBlockingQueue<Future<Object>> blockingQueue) throws InterruptedException, ExecutionException {
-        while (!blockingQueue.isEmpty()) {
-            synchronized (blockingQueue) {
-                blockingQueue.take().get();
-            }
+    private static List<String> readTableList(String path) throws IOException {
+        try (BufferedReader reader = Files.newBufferedReader(Paths.get(path))) {
+            return reader.lines()
+                .filter(line -> !line.trim().isEmpty())
+                .map(String::toUpperCase)
+                .collect(Collectors.toList());
         }
     }
 }
