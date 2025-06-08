@@ -1,0 +1,98 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etl-orchestration-service
+  namespace: etl-ns
+  labels:
+    app: etl-orchestration-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etl-orchestration-service
+  template:
+    metadata:
+      labels:
+        app: etl-orchestration-service
+    spec:
+      containers:
+      - name: etl-orchestration-service
+        image: your-registry/etl-orchestration-service:latest # Placeholder
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8083 # Default port for orchestration service
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "kubernetes"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: ETL_TOPICS_COMMAND_EXTRACT
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: EXTRACT_COMMAND_TOPIC
+        - name: ETL_TOPICS_STATUS_UPDATES
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: STATUS_UPDATES_TOPIC
+        # Database connection for its own DB (PostgreSQL)
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://$(POSTGRES_HOST):5432/$(POSTGRES_DB_NAME)"
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: etl-secrets
+              key: POSTGRES_USER
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: etl-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_DB_NAME
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: POSTGRES_DB_NAME
+        # Flyway enabled by default in properties, will use above datasource
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8083
+          initialDelaySeconds: 45 # Longer for Flyway migration
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8083
+          initialDelaySeconds: 90 # Longer for Flyway migration
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etl-orchestration-svc
+  namespace: etl-ns
+  labels:
+    app: etl-orchestration-service
+spec:
+  selector:
+    app: etl-orchestration-service
+  ports:
+  - protocol: TCP
+    port: 8083
+    targetPort: 8083
+  type: ClusterIP # Could be LoadBalancer if UI is external and directly calls this API
+                  # Or use Ingress controller. For now, ClusterIP.

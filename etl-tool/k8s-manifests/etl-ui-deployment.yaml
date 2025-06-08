@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etl-ui
+  namespace: etl-ns
+  labels:
+    app: etl-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etl-ui
+  template:
+    metadata:
+      labels:
+        app: etl-ui
+    spec:
+      containers:
+      - name: etl-ui
+        image: your-registry/etl-ui:latest # Placeholder
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 3000 # Default port for Next.js app
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: PORT
+          value: "3000" # Next.js listens on PORT env var
+        # URL for the backend API. Assumes Orchestration service is named 'etl-orchestration-svc'
+        # and is in the same namespace 'etl-ns'.
+        - name: NEXT_PUBLIC_API_URL
+          value: "http://etl-orchestration-svc.etl-ns.svc.cluster.local:8083/api"
+        # Add other UI specific environment variables if needed
+        readinessProbe: # Next.js doesn't have a default health endpoint like Actuator
+                        # A custom health check endpoint would need to be added to the Next.js app
+                        # For now, using TCP socket probe as a basic check.
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 15
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 20
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etl-ui-svc
+  namespace: etl-ns
+  labels:
+    app: etl-ui
+spec:
+  selector:
+    app: etl-ui
+  ports:
+  - protocol: TCP
+    port: 80 # External port (e.g., for LoadBalancer or NodePort access)
+    targetPort: 3000 # Container port (Next.js app)
+  type: LoadBalancer # Or NodePort, or use Ingress for external access
+                     # LoadBalancer is simple for cloud environments.
+                     # For local (Minikube), NodePort + `minikube service etl-ui-svc -n etl-ns`
+                     # Or ClusterIP and setup an Ingress controller.

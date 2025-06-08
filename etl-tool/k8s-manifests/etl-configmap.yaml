@@ -1,0 +1,28 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etl-config
+  namespace: etl-ns # Should match the namespace used in deployments
+data:
+  # Kafka Configuration
+  KAFKA_BOOTSTRAP_SERVERS: "kafka-service.kafka-ns.svc.cluster.local:9092" # Example internal Kafka URL
+
+  # PostgreSQL Configuration (for Orchestration and Load services)
+  POSTGRES_HOST: "postgresql-service.db-ns.svc.cluster.local" # Example internal PostgreSQL URL
+  POSTGRES_DB_NAME: "etl_job_db"
+  # Note: Username and Password should come from Secrets
+
+  # Topic Names (centralized configuration)
+  EXTRACT_COMMAND_TOPIC: "extraction-commands-topic"
+  UNTRANSFORMED_DATA_TOPIC: "untransformed-data-topic"
+  TRANSFORMED_DATA_TOPIC: "transformed-data-topic"
+  STATUS_UPDATES_TOPIC: "etl-job-status-updates-topic"
+
+  # Default Spring Profile for K8s
+  SPRING_PROFILES_ACTIVE: "kubernetes" # Can be overridden per deployment if needed
+
+  # UI specific configurations (if any needed via backend-mounted config)
+  # For NEXT_PUBLIC_ variables, they are usually built into the image or set at runtime differently.
+  # This ConfigMap is more for backend services.
+  # UI_API_BASE_URL: "http://etl-orchestration-svc.etl-ns.svc.cluster.local:8083/api" # Example for server-side rendering if UI needed it from mounted file.
+                                                                                    # For client-side, NEXT_PUBLIC_ is better.

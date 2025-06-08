@@ -1,0 +1,82 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etl-extract-service
+  namespace: etl-ns
+  labels:
+    app: etl-extract-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etl-extract-service
+  template:
+    metadata:
+      labels:
+        app: etl-extract-service
+    spec:
+      containers:
+      - name: etl-extract-service
+        image: your-registry/etl-extract-service:latest # Placeholder, replace with actual image URI
+        imagePullPolicy: IfNotPresent # Or Always, depending on your update strategy
+        ports:
+        - containerPort: 8081 # Default port for extract service
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "kubernetes" # To load Kubernetes-specific Spring profiles if any
+        # Example of using ConfigMap for Kafka servers
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config # Assumes etl-configmap.yaml is applied
+              key: KAFKA_BOOTSTRAP_SERVERS
+        # Example of using ConfigMap for topic names
+        - name: ETL_TOPICS_COMMAND_EXTRACT
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: EXTRACT_COMMAND_TOPIC
+        - name: ETL_TOPICS_OUTPUT_UNTRANSFORMED
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: UNTRANSFORMED_DATA_TOPIC
+        - name: ETL_TOPICS_STATUS_UPDATES
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: STATUS_UPDATES_TOPIC
+        # Add other environment variables from ConfigMaps or Secrets as needed
+        # For example, database connection details if this service needed them directly.
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8081
+          initialDelaySeconds: 30 # Time for app to start before first probe
+          periodSeconds: 10 # How often to probe
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8081
+          initialDelaySeconds: 60 # Longer delay for liveness
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etl-extract-svc # Service name
+  namespace: etl-ns
+  labels:
+    app: etl-extract-service
+spec:
+  selector:
+    app: etl-extract-service # Must match labels in Deployment's template
+  ports:
+  - protocol: TCP
+    port: 8081       # Port the service will be available on within the cluster
+    targetPort: 8081 # Port on the container that the service forwards traffic to
+  type: ClusterIP # Only reachable within the cluster by default

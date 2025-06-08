@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etl-load-service
+  namespace: etl-ns
+  labels:
+    app: etl-load-service
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: etl-load-service
+  template:
+    metadata:
+      labels:
+        app: etl-load-service
+    spec:
+      containers:
+      - name: etl-load-service
+        image: your-registry/etl-load-service:latest # Placeholder
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8084 # Default port for load service
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "kubernetes"
+        - name: KAFKA_BOOTSTRAP_SERVERS
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: KAFKA_BOOTSTRAP_SERVERS
+        - name: ETL_TOPICS_INPUT_TRANSFORMED
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: TRANSFORMED_DATA_TOPIC
+        - name: ETL_TOPICS_STATUS_UPDATES
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: STATUS_UPDATES_TOPIC
+        # Database connection for target DB (PostgreSQL)
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://$(POSTGRES_HOST):5432/$(POSTGRES_DB_NAME)" # Uses vars from ConfigMap/Secret
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: etl-secrets
+              key: POSTGRES_USER
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: etl-secrets
+              key: POSTGRES_PASSWORD
+        - name: POSTGRES_HOST # Used by SPRING_DATASOURCE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: POSTGRES_HOST
+        - name: POSTGRES_DB_NAME # Used by SPRING_DATASOURCE_URL
+          valueFrom:
+            configMapKeyRef:
+              name: etl-config
+              key: POSTGRES_DB_NAME
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8084
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8084
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          timeoutSeconds: 5
+          failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etl-load-svc
+  namespace: etl-ns
+  labels:
+    app: etl-load-service
+spec:
+  selector:
+    app: etl-load-service
+  ports:
+  - protocol: TCP
+    port: 8084
+    targetPort: 8084
+  type: ClusterIP

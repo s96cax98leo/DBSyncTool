@@ -1,0 +1,19 @@
+target/
+.mvn/
+mvnw
+mvnw.cmd
+.idea/
+*.iml
+*.log
+logs/
+# Add any other files specific to your development environment that shouldn't be in the Docker image
+# For example, IDE configuration files, local environment files, etc.
+.DS_Store
+**/.DS_Store
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+**/src/test/resources/
+**/src/test/java/
+# If you have a specific application.yml or properties for local dev that shouldn't be packaged:
+# src/main/resources/application-local.properties
